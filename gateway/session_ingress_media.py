@@ -449,7 +449,7 @@ def release_admission_media(db, admission_id):
     # Native and hosted inputs are named in the prompt the transcript keeps ("It is saved at: <path>"),
     # so they are history context like an API image: they go once no live row and no transcript row
     # names them, never while a follow-up turn can still be told to read them. Session deletion
-    # collects them through ``retire_media``; ``sweep_settled_media`` bounds the rest at main's 24 h.
+    # collects them through ``retire_media``; ``sweep_settled_media`` applies the profile's expiry.
     released = release_unheld_media(db, admission_media_references(row['payload']))
     released += release_unheld_media(db, hosted_document_references(row['request_id'], row['payload']))
     return released + sweep_settled_media(db)
@@ -460,12 +460,17 @@ _last_sweep = {}
 
 
 def sweep_settled_media(db, *, now=None):
-    """At most hourly per store: collect settled native/attachment inputs older than
-    ``MEDIA_CACHE_MAX_AGE_HOURS`` whatever the transcript says, as main's age-based document cache
-    cleanup did for the staging copy the note used to name. A live admission or an in-flight capture
-    still holds its bytes; API images and hosted documents keep their own owners."""
+    """At most hourly per store: expire settled native/attachment inputs when configured.
+
+    Zero disables age-based expiry, preserving transcript media until its owners release it.
+    A live admission or in-flight capture still holds its bytes for a positive age;
+    API images and hosted documents keep their own owners.
+    """
     import time
-    from agent.provider_media import MEDIA_CACHE_MAX_AGE_HOURS
+    from agent.provider_media import media_cache_max_age_hours
+    max_age_hours = media_cache_max_age_hours()
+    if max_age_hours == 0:
+        return 0
     now = time.time() if now is None else now
     if now - _last_sweep.get(db.db_path, 0) < _SWEEP_INTERVAL_S:
         return 0
@@ -474,7 +479,7 @@ def sweep_settled_media(db, *, now=None):
         rows = conn.execute("""SELECT json_extract(payload_json, '$.attachments_v1.media', '$.native_text_v1.media')
             FROM session_admissions WHERE status='terminal' AND (json_type(payload_json, '$.attachments_v1.media')
             IS NOT NULL OR json_type(payload_json, '$.native_text_v1.media') IS NOT NULL)""").fetchall()
-    cutoff = now - MEDIA_CACHE_MAX_AGE_HOURS * 3600
+    cutoff = now - max_age_hours * 3600
     stale = {}
     for (encoded,) in rows:
         attachments, native = json.loads(encoded)

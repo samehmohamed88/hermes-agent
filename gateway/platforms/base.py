@@ -24,7 +24,7 @@ from gateway.platforms.base_image_sniff import _looks_like_image
 from gateway.platforms.base_media_flags import pad_inline_flags
 from gateway.runtime_footer import footer_onto_photo_caption, send_footer_unless_captioned
 from gateway.platforms.session_model import _SessionModelSettingsMixin
-from utils import normalize_proxy_url, unlink_files_older_than
+from utils import normalize_proxy_url
 from agent.i18n import t
 from agent.retry_utils import jittered_backoff
 from agent.proxy_bypass import first_proxy_env_value, should_bypass_proxy as _should_bypass_proxy
@@ -451,7 +451,7 @@ from hermes_cli.home_data_layout import SECRET_CACHE_STORES
 from gateway.session import SessionSource, build_session_key
 from gateway.session_transcript import TranscriptReadError
 from hermes_constants import CONNECTOR_DOWNLOADS_SUBDIR, get_default_hermes_root, get_hermes_dir, get_hermes_home
-from agent.provider_media import GENERATED_SUBDIR, MEDIA_CACHE_MAX_AGE_HOURS
+from agent.provider_media import GENERATED_SUBDIR, cleanup_media_cache
 
 if TYPE_CHECKING:
     from agent.display import ToolPreview
@@ -545,8 +545,8 @@ async def read_httpx_body_with_limit(response, *, media_type: str, body=None) ->
 def _cache_dir_accessors(kind: str, constant_name: str, new_subpath: str, old_name: str):
     """``(get_<kind>_cache_dir, cleanup_<kind>_cache)`` pair. The getter resolves fresh via
     get_hermes_dir (active profile) unless a test monkeypatched the module constant away from
-    its import-time default, and creates the directory; ``cleanup(max_age_hours=MEDIA_CACHE_MAX_AGE_HOURS)`` deletes
-    older files and returns the count."""
+    its import-time default, and creates the directory. Cleanup uses the active profile's
+    media retention unless an age is supplied; zero disables expiry."""
     def get_dir() -> Path:
         d = get_hermes_dir(new_subpath, old_name)
         current = globals().get(constant_name)
@@ -556,8 +556,8 @@ def _cache_dir_accessors(kind: str, constant_name: str, new_subpath: str, old_na
         _secure_media_cache_dir(d)
         return d
 
-    def cleanup(max_age_hours: int = MEDIA_CACHE_MAX_AGE_HOURS) -> int:
-        return unlink_files_older_than(get_dir(), "*", max_age_hours * 3600)
+    def cleanup(max_age_hours: float | None = None) -> int:
+        return cleanup_media_cache(get_dir, max_age_hours)
     get_dir.__name__ = get_dir.__qualname__ = f"get_{kind}_cache_dir"
     cleanup.__name__ = cleanup.__qualname__ = f"cleanup_{kind}_cache"
     return get_dir, cleanup

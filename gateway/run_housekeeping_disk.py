@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def housekeeping_media_caches() -> None:
-    """Hourly media-cache prune (24h max age); spillover (None) keeps the session retention window."""
+    """Hourly cleanup using profile media retention and spillover's session retention."""
     from gateway.platforms.base import (
         cleanup_audio_cache, cleanup_document_cache, cleanup_image_cache, cleanup_screenshot_cache,
         cleanup_video_cache)
@@ -29,6 +29,8 @@ def housekeeping_media_caches() -> None:
     from agent.provider_media import MEDIA_CACHE_MAX_AGE_HOURS
     from gateway.run import _housekeeping_chore
 
+    profile_retention = {cleanup_image_cache, cleanup_document_cache, cleanup_audio_cache,
+                         cleanup_video_cache, cleanup_screenshot_cache, cleanup_spillover_cache}
     for cache_name, cleanup_fn in (
         ("Image", cleanup_image_cache), ("Document", cleanup_document_cache),
         ("Audio", cleanup_audio_cache), ("Video", cleanup_video_cache),
@@ -36,7 +38,7 @@ def housekeeping_media_caches() -> None:
         ("Terminal temp", cleanup_terminal_temp_cache), ("Bot DM", cleanup_bot_dm_cache),
         ("Bot relay", cleanup_bot_relay_artifacts)):
         def _one(name=cache_name, fn=cleanup_fn):
-            removed = fn(max_age_hours=None if fn is cleanup_spillover_cache else MEDIA_CACHE_MAX_AGE_HOURS)
+            removed = fn(max_age_hours=None if fn in profile_retention else MEDIA_CACHE_MAX_AGE_HOURS)
             if removed:
                 logger.info("%s cache cleanup: removed %d stale file(s)", name, removed)
         _housekeeping_chore(f"{cache_name} cache cleanup", _one)

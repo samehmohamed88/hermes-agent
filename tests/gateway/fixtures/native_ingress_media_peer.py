@@ -106,7 +106,7 @@ async def probe(mode, peer):
         event.channel_context = 'MUTATED_CONTEXT'
         event.source.chat_id = 'mutated-route'
         os.utime(retained, (1, 1))
-        cleanup_document_cache(max_age_hours=0)
+        cleanup_document_cache(max_age_hours=1)
         assert retained.read_text() == 'ORIGINAL_DOCUMENT_BYTES'
         # A separate started row becomes unknown; neither it nor its file is reclaimed.
         unknown_event = replace(restored, source=replace(restored.source, chat_id='unknown-media'), message_id='unknown-1')

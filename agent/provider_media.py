@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import math
 import uuid
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -20,12 +21,46 @@ from urllib.parse import urljoin
 # inbound caches the gateway housekeeping sweeps (#126445): for base64-returning
 # providers the cached file is the ONLY copy of the output.
 GENERATED_SUBDIR = "generated"
-# Age (hours) past which the gateway sweeps transient media caches; remote sync of the
-# unswept ``cache/generated`` tree uses the same window so it stays bounded.
+# Default age for media expiry; remote sync of the unswept ``cache/generated`` tree
+# retains this independent bounded window even when local media expiry is disabled.
 MEDIA_CACHE_MAX_AGE_HOURS = 24
 
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 _MAX_SAVE_URL_REDIRECTS = 5
+
+
+def media_cache_max_age_hours() -> float:
+    """Active profile's media expiry age; zero disables age-based deletion.
+
+    Resolve at each cleanup, not import time: one gateway serves several profiles,
+    and changing retention must affect their next sweep without restarting it.
+    Invalid values keep the 24-hour default; unavailable configuration skips expiry.
+    """
+    from hermes_cli.config_backend import ConfigBackendUnavailable
+    from hermes_cli.config_effective import load_user_config_effective
+
+    try:
+        config = load_user_config_effective(fail_closed=True)
+    except (Exception, ConfigBackendUnavailable):  # health: allow BLE001 -- failed config reads must never authorize deletion
+        return 0
+    try:
+        section = config.get("media_cache", {})
+        value = section.get("max_age_hours", MEDIA_CACHE_MAX_AGE_HOURS)
+        if isinstance(value, bool):
+            return MEDIA_CACHE_MAX_AGE_HOURS
+        hours = float(value)
+        if math.isfinite(hours) and hours >= 0:
+            return hours
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return MEDIA_CACHE_MAX_AGE_HOURS
+    return MEDIA_CACHE_MAX_AGE_HOURS
+
+
+def cleanup_media_cache(get_dir, max_age_hours: float | None = None) -> int:
+    """Sweep one flat cache with profile retention, without touching retained subdirectories."""
+    from utils import unlink_files_older_than
+    hours = media_cache_max_age_hours() if max_age_hours is None else max_age_hours
+    return 0 if hours == 0 else unlink_files_older_than(get_dir(), "*", hours * 3600)
 
 
 def cache_dir(kind: str) -> Path:

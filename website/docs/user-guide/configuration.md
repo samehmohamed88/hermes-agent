@@ -1005,6 +1005,26 @@ The MCP threshold is always capped at the (possibly context-scaled) generic per-
 
 Hermes also flags **provider-side elision**: when an MCP or web tool result embeds its own truncation markers (`...N more items`, `"has_more": true`, "saved to sandbox" notes), a one-line notice is appended to the result warning that the visible data is incomplete and should be paged/fetched before treating any enumeration as complete.
 
+### Media cache retention
+
+`media_cache.max_age_hours` controls age-based cleanup of image, audio, video,
+document and screenshot caches, plus settled native input files. The default is
+24 hours. Set it to `0` in the owning profile's `config.yaml` to preserve older
+attachments for chat history and follow-up questions:
+
+```yaml
+media_cache:
+  max_age_hours: 0
+```
+
+Each cleanup reads the active profile's setting. Positive values set the expiry
+age in hours; invalid, negative or non-finite values retain the 24-hour default.
+If profile configuration cannot be read, that cleanup skips age-based deletion.
+Disabling expiry does not restore files already deleted. It increases disk usage,
+so retain backups and manage storage explicitly. Session deletion still releases
+unreferenced retained input files; generated deliverables, spillover archives and
+unrelated temporary caches keep their separate retention policies.
+
 ## Global Toolset Disable
 
 To suppress specific toolsets across the CLI and every gateway platform in one
